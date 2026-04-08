@@ -1,65 +1,28 @@
-# Telegram Weather Bot
+# TGBOT
 
-Простой Telegram-бот погоды на Python.
+Telegram weather bot with animated weather GIFs, compact forecast cards, clothing advice, inline controls, subscriptions, and weather alerts.
 
-Что умеет бот:
-- показывает текущую погоду по команде `/weather <город>`
-- понимает обычное текстовое сообщение с названием города без команды
-- принимает геолокацию прямо из Telegram
-- показывает более точную сводку с диапазоном температуры за день, давлением, видимостью и прогнозом на ближайшие часы
-- подсказывает, что лучше надеть сегодня с учетом температуры, ощущаемой температуры, ветра и осадков, используя более живые и разнообразные фразы
-- отправляет GIF-анимацию погоды с отдельными сценами для дня и ночи
+## Features
+- current weather, today, tomorrow, and 5-day forecast
+- one Telegram message with GIF and caption
+- day and night GIF variants
+- clothing advice and scenario-based hints
+- daily subscriptions and alert notifications
+- polling or webhook mode for Railway
 
-## Подготовка
+## Environment
+- `TELEGRAM_BOT_TOKEN`
+- `OPENWEATHER_API_KEY`
+- `WEATHER_CACHE_TTL_SECONDS`
+- `USE_WEBHOOK`
+- `WEBHOOK_URL`
+- `WEBHOOK_PATH`
+- `WEBHOOK_SECRET_TOKEN`
+- `WEBHOOK_LISTEN`
 
-1. Создай бота через BotFather и получи `TELEGRAM_BOT_TOKEN`.
-2. Получи ключ `OPENWEATHER_API_KEY` на OpenWeather.
-3. Создай `.env` на основе примера:
-
-```powershell
-Copy-Item .env.example .env
+## Run
+```bash
+python app.py
 ```
 
-4. Заполни `.env` своими значениями.
-
-## Запуск на Windows
-
-```powershell
-cd D:\tgbot
-py -3 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-py scripts/generate_weather_gifs.py
-py app.py
-```
-
-Если PowerShell блокирует активацию виртуального окружения:
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-```
-
-## Деплой на Railway
-
-1. Создай репозиторий на GitHub и загрузи туда проект.
-2. Убедись, что файл `.env` не попал в репозиторий. В Git нужно отправлять только `.env.example`.
-3. На Railway создай новый проект через `Deploy from GitHub Repo`.
-4. Выбери этот репозиторий. Railway увидит файл `railway.json` и будет запускать бота командой `python app.py`.
-5. В разделе `Variables` добавь:
-
-```text
-TELEGRAM_BOT_TOKEN=твой_токен_бота
-OPENWEATHER_API_KEY=твой_ключ_openweather
-```
-
-6. Запусти деплой и открой логи.
-7. Если в логах есть строка `Weather bot started`, бот уже работает в облаке и компьютер можно выключать.
-
-## Использование
-
-- `/start` - запуск бота
-- `/help` - список команд
-- `/weather Москва` - погода по названию города
-- `Москва` - погода по обычному текстовому сообщению
-- `/location` - запрос кнопки отправки геопозиции
-- Отправь геолокацию через кнопку `Отправить геопозицию`, чтобы получить погоду рядом с собой и совет по одежде
+`app.py` unpacks the bundled runtime sources on startup and launches the modular bot from `weather_bot.bot`.
