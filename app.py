@@ -5,6 +5,7 @@ import re
 import zlib
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -37,6 +38,14 @@ CURRENT_WEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
 FORECAST_URL = "https://api.openweathermap.org/data/2.5/forecast"
 GEOCODING_URL = "https://api.openweathermap.org/geo/1.0/direct"
 LOCATION_BUTTON_TEXT = "Отправить геопозицию"
+BASE_DIR = Path(__file__).resolve().parent
+WEATHER_THEMES = ("storm", "snow", "rain", "heat", "fog", "wind", "sun", "cloud")
+WEATHER_GIF_DIR = BASE_DIR / "assets" / "weather"
+WEATHER_GIF_VARIANTS = tuple(
+    WEATHER_GIF_DIR / f"{theme}_{period}.gif"
+    for theme in WEATHER_THEMES
+    for period in ("day", "night")
+)
 REQUEST_TIMEOUT = 10
 SERVICE_PARTS = {"на", "де", "ла", "ле", "ди", "ду"}
 CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
@@ -196,6 +205,16 @@ def format_value(value: Any, digits: int = 0) -> str:
     return f"{number:.{digits}f}"
 
 
+def format_compact_value(value: Any, digits: int = 1) -> str:
+    number = get_number(value)
+    if number is None:
+        return "—"
+    rounded = round(number, digits)
+    if float(rounded).is_integer():
+        return str(int(rounded))
+    return f"{rounded:.{digits}f}".rstrip("0").rstrip(".")
+
+
 def format_pressure_mmhg(value: Any) -> str:
     pressure_hpa = get_number(value)
     if pressure_hpa is None:
@@ -207,7 +226,7 @@ def format_visibility_km(value: Any) -> str:
     visibility_meters = get_number(value)
     if visibility_meters is None:
         return "—"
-    return f"{visibility_meters / 1000:.1f}"
+    return format_compact_value(visibility_meters / 1000, digits=1)
 
 
 def choose_phrase(options: list[str], *seed_parts: Any) -> str:
@@ -621,6 +640,79 @@ def get_weather_theme(
     return "cloud"
 
 
+def resolve_weather_theme_from_bundle(weather_bundle: dict[str, Any]) -> str:
+    current_data = weather_bundle["current"]
+    forecast_data = weather_bundle["forecast"]
+    forecast_summary = summarize_forecast(current_data, forecast_data)
+    raw_description = str(current_data.get("weather", [{}])[0].get("description", ""))
+    current_temp = get_number(current_data.get("main", {}).get("temp"))
+    day_max = get_number(forecast_summary.get("day_max")) or current_temp
+    return get_weather_theme(raw_description, forecast_summary, day_max)
+
+
+def resolve_weather_period_from_bundle(weather_bundle: dict[str, Any]) -> str:
+    current_data = weather_bundle["current"]
+    forecast_data = weather_bundle["forecast"]
+    weather = current_data.get("weather", [{}])[0]
+    icon_code = str(weather.get("icon", "")).strip().lower()
+    if icon_code.endswith("d"):
+        return "day"
+    if icon_code.endswith("n"):
+        return "night"
+
+    current_timestamp = get_number(current_data.get("dt"))
+    sys_info = current_data.get("sys", {})
+    sunrise = get_number(sys_info.get("sunrise"))
+    sunset = get_number(sys_info.get("sunset"))
+    if (
+        current_timestamp is not None
+        and sunrise is not None
+        and sunset is not None
+        and sunrise < sunset
+    ):
+        if sunrise <= current_timestamp < sunset:
+            return "day"
+        return "night"
+
+    timezone_shift = int(
+        current_data.get("timezone", forecast_data.get("city", {}).get("timezone", 0)) or 0
+    )
+    local_dt = get_local_datetime(current_timestamp, timezone_shift)
+    if local_dt is not None and 6 <= local_dt.hour < 21:
+        return "day"
+    return "night"
+
+
+def ensure_weather_gif_assets() -> None:
+    if all(path.is_file() for path in WEATHER_GIF_VARIANTS):
+        return
+
+    try:
+        from scripts.generate_weather_gif_variants import main as generate_weather_gif_variants
+    except Exception:
+        logger.exception("Не удалось импортировать генератор погодных GIF")
+        return
+
+    try:
+        generate_weather_gif_variants()
+    except Exception:
+        logger.exception("Не удалось сгенерировать погодные GIF")
+
+
+def get_weather_animation_path(weather_bundle: dict[str, Any]) -> Path | None:
+    ensure_weather_gif_assets()
+    theme = resolve_weather_theme_from_bundle(weather_bundle)
+    period = resolve_weather_period_from_bundle(weather_bundle)
+    candidates = [
+        WEATHER_GIF_DIR / f"{theme}_{period}.gif",
+        WEATHER_GIF_DIR / f"{theme}.gif",
+    ]
+    for animation_path in candidates:
+        if animation_path.is_file():
+            return animation_path
+    return None
+
+
 def get_report_emoji(theme: str) -> str:
     return {
         "storm": "⛈️",
@@ -758,7 +850,7 @@ def build_weather_report(weather_bundle: dict[str, Any]) -> str:
     forecast_summary = summarize_forecast(current_data, forecast_data)
 
     city_label = weather_bundle.get("resolved_name") or current_data.get("name", "Неизвестный город")
-    city_name = html.escape(inflect_city_name_to_prepositional(str(city_label)))
+    city_name = html.escape(str(city_label))
     weather = current_data.get("weather", [{}])[0]
     main = current_data.get("main", {})
     wind = current_data.get("wind", {})
@@ -772,36 +864,70 @@ def build_weather_report(weather_bundle: dict[str, Any]) -> str:
     day_max_number = get_number(forecast_summary.get("day_max")) or current_temp_number
     theme = get_weather_theme(raw_description, forecast_summary, day_max_number)
     report_emoji = get_report_emoji(theme)
-    forecast_emoji = get_forecast_emoji(theme)
-    temperature_emoji = get_temperature_emoji(current_temp_number)
     feels_like_emoji = get_feels_like_emoji(current_temp_number, feels_like_number)
-    temperature = format_value(main.get("temp"), digits=1)
-    feels_like = format_value(main.get("feels_like"), digits=1)
-    humidity = format_value(main.get("humidity"))
-    wind_speed = format_value(wind.get("speed"), digits=1)
-    day_min = format_value(forecast_summary.get("day_min"), digits=1)
-    day_max = format_value(forecast_summary.get("day_max"), digits=1)
-    short_term_outlook = html.escape(build_short_term_outlook(forecast_summary))
     outfit_emoji = get_outfit_heading_emoji(theme, bucket)
     advice = html.escape(get_clothing_advice(current_data, forecast_summary))
+    temperature = format_compact_value(main.get("temp"), digits=1)
+    feels_like = format_compact_value(main.get("feels_like"), digits=1)
+    pressure = format_pressure_mmhg(main.get("pressure"))
+    visibility = format_visibility_km(current_data.get("visibility"))
+    humidity = format_value(main.get("humidity"))
+    wind_speed = format_compact_value(wind.get("speed"), digits=1)
+    day_min = format_compact_value(forecast_summary.get("day_min"), digits=1)
+    day_max = format_compact_value(forecast_summary.get("day_max"), digits=1)
+    trend_temp = format_compact_value(forecast_summary.get("trend_temp"), digits=1)
+    trend_time = html.escape(str(forecast_summary.get("trend_time") or "—"))
+    precipitation_chance = round(
+        (get_number(forecast_summary.get("precipitation_chance")) or 0.0) * 100
+    )
     wind_emoji = "🌬️" if (get_number(wind.get("speed")) or 0.0) >= 8 else "💨"
 
-    return (
-        f"{report_emoji} Погода в <b>{city_name}</b>\n"
-        f"{condition_emoji} {description}, {temperature_emoji} {temperature}°C"
-        f" • {feels_like_emoji} ощущается как {feels_like}°C\n"
-        f"📉 Сегодня {day_min}..{day_max}°C"
-        f" • {wind_emoji} ветер {wind_speed} м/с"
-        f" • 💧 {humidity}%\n"
-        "\n"
-        f"<b>{forecast_emoji} Дальше</b>\n{short_term_outlook}\n\n"
-        f"<b>{outfit_emoji} Что надеть</b>\n{advice}"
+    lines = [
+        f"{report_emoji} <b>{city_name}</b>",
+        f"{condition_emoji} {description}",
+        "",
+        f"🌡️ Сейчас: {temperature}°C",
+        f"{feels_like_emoji} Ощущается: {feels_like}°C",
+        f"📉 Сегодня: {day_min}..{day_max}°C",
+        f"{wind_emoji} Ветер: {wind_speed} м/с",
+        f"💧 Влажность: {humidity}%",
+        f"📊 Давление: {pressure} мм",
+        f"👁️ Видимость: {visibility} км",
+        f"🌧️ Осадки: {precipitation_chance}%",
+    ]
+
+    if trend_time != "—" and trend_temp != "—":
+        lines.append(f"🕒 К {trend_time}: {trend_temp}°C")
+
+    lines.extend(
+        [
+            "",
+            f"<b>{outfit_emoji} Что надеть</b>",
+            advice,
+        ]
     )
+
+    return "\n".join(lines)
 
 
 async def reply_with_weather(message: Message, weather_bundle: dict[str, Any]) -> None:
+    report = build_weather_report(weather_bundle)
+    animation_path = get_weather_animation_path(weather_bundle)
+    if animation_path is not None:
+        try:
+            with animation_path.open("rb") as animation_file:
+                await message.reply_animation(
+                    animation=animation_file,
+                    caption=report,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=build_location_keyboard(),
+                )
+                return
+        except Exception:
+            logger.exception("Не удалось отправить GIF-анимацию погоды: %s", animation_path)
+
     await message.reply_text(
-        build_weather_report(weather_bundle),
+        report,
         parse_mode=ParseMode.HTML,
         reply_markup=build_location_keyboard(),
     )
@@ -940,6 +1066,7 @@ def main() -> None:
             "Заполни реальный токен в файле .env или в переменных окружения."
         ) from None
 
+    ensure_weather_gif_assets()
     application = Application.builder().token(telegram_token).build()
 
     application.add_handler(CommandHandler("start", start_command))
