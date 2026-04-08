@@ -6,3 +6,4 @@ bot*.log
 data/
 *.db
 .pytest_cache/
+bundle_parts/
