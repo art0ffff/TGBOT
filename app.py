@@ -1,27 +1,31 @@
 from __future__ import annotations
 
 import base64
-import io
-import zipfile
+import hashlib
 from pathlib import Path
 
+EXPECTED_SHA256 = "b04128b8235b3987f5659e6d065105a2eb5e4123e67030fa3b79034bf5da210f"
+PART_COUNT = 7
 
-def ensure_runtime_bundle() -> None:
+
+def main() -> None:
     root = Path(__file__).resolve().parent
-    parts_dir = root / "runtime_bundle"
-    part_files = sorted(parts_dir.glob("part*.b64"))
-    if not part_files:
-        raise RuntimeError("RUNTIME_BUNDLE_PARTS_MISSING")
+    encoded = "".join(
+        (root / "runtime_parts" / f"part_{index:02d}.b64").read_text(encoding="ascii").strip()
+        for index in range(PART_COUNT)
+    )
+    encoded += "=" * (-len(encoded) % 4)
+    source = base64.b64decode(encoded)
+    actual_sha256 = hashlib.sha256(source).hexdigest()
+    if actual_sha256 != EXPECTED_SHA256:
+        raise RuntimeError(f"Runtime bundle checksum mismatch: {actual_sha256}")
 
-    encoded = "".join(path.read_text(encoding="ascii").strip() for path in part_files)
-    data = base64.b64decode(encoded, validate=True)
-    with zipfile.ZipFile(io.BytesIO(data)) as archive:
-        archive.extractall(root)
-
-
-ensure_runtime_bundle()
-
-from weather_bot.bot import main
+    globals_dict = {
+        "__name__": "__main__",
+        "__file__": str(root / "_runtime_weather_bot.py"),
+        "__package__": None,
+    }
+    exec(compile(source.decode("utf-8"), globals_dict["__file__"], "exec"), globals_dict)
 
 
 if __name__ == "__main__":
