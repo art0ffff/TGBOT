@@ -6,4 +6,3 @@ bot*.log
 data/
 *.db
 .pytest_cache/
-assets/weather/
