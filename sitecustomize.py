@@ -3,7 +3,15 @@ from __future__ import annotations
 import logging
 import os
 import runpy
+import sys
 from pathlib import Path
+
+
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+    stream=sys.stdout,
+)
 
 
 def _premium_weather_gifs_ready(root: Path) -> bool:
