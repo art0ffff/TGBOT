@@ -20,7 +20,7 @@ def _premium_weather_gifs_ready(root: Path) -> bool:
     themes = ("sun", "cloud", "rain", "snow", "storm", "fog", "wind", "heat")
     periods = ("day", "night")
     try:
-        if marker.read_text(encoding="utf-8").strip() != "premium-v4":
+        if marker.read_text(encoding="utf-8").strip() != "premium-v5":
             return False
         for theme in themes:
             for period in periods:

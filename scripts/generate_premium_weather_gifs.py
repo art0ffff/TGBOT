@@ -8,38 +8,30 @@ from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "weather"
-VERSION = "premium-v4"
+VERSION = "premium-v5"
 MARKER = OUT / ".premium-gifs"
 WIDTH = 384
 HEIGHT = 216
 SCALE = 2
 FRAMES = 24
 DURATION = 70
-PERIODS = ("day", "night")
 THEMES = ("sun", "cloud", "rain", "snow", "storm", "fog", "wind", "heat")
+PERIODS = ("day", "night")
 
 
 def s(value: float) -> int:
     return round(value * SCALE)
 
 
-def box(values: tuple[float, float, float, float]) -> tuple[int, int, int, int]:
-    return tuple(s(value) for value in values)
+def box(values):
+    return tuple(s(v) for v in values)
 
 
-def color(rgb: tuple[int, int, int], alpha: int = 255) -> tuple[int, int, int, int]:
-    return (*rgb, alpha)
+def mix(a, b, t, alpha=255):
+    return tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(3)) + (alpha,)
 
 
-def lerp(a: float, b: float, t: float) -> float:
-    return a + (b - a) * t
-
-
-def mix(a: tuple[int, int, int], b: tuple[int, int, int], t: float, alpha: int = 255) -> tuple[int, int, int, int]:
-    return (round(lerp(a[0], b[0], t)), round(lerp(a[1], b[1], t)), round(lerp(a[2], b[2], t)), alpha)
-
-
-def gradient(top: tuple[int, int, int], bottom: tuple[int, int, int]) -> Image.Image:
+def gradient(top, bottom):
     image = Image.new("RGBA", (WIDTH * SCALE, HEIGHT * SCALE))
     draw = ImageDraw.Draw(image)
     for y in range(HEIGHT * SCALE):
@@ -47,220 +39,350 @@ def gradient(top: tuple[int, int, int], bottom: tuple[int, int, int]) -> Image.I
     return image
 
 
-def blur_layer(base: Image.Image, radius: float) -> Image.Image:
-    return base.filter(ImageFilter.GaussianBlur(s(radius)))
+def blur(image, radius):
+    return image.filter(ImageFilter.GaussianBlur(s(radius)))
 
 
-def glow(image: Image.Image, x: float, y: float, radius: float, rgba: tuple[int, int, int, int]) -> None:
+def glow(image, x, y, radius, rgba):
     layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer, "RGBA")
     for step in range(7, 0, -1):
-        scale = step / 7
-        r = radius * (1.0 + 2.0 * scale)
-        alpha = round(rgba[3] * scale * 0.18)
-        draw.ellipse(box((x - r, y - r, x + r, y + r)), fill=(rgba[0], rgba[1], rgba[2], alpha))
-    image.alpha_composite(blur_layer(layer, 2.0))
+        r = radius * (1 + step / 2.4)
+        draw.ellipse(box((x - r, y - r, x + r, y + r)), fill=(*rgba[:3], round(rgba[3] * step / 55)))
+    image.alpha_composite(blur(layer, 2.0))
 
 
-def draw_sun(image: Image.Image, frame: int) -> None:
+def sun(image, frame, x=90, y=56, radius=30):
     draw = ImageDraw.Draw(image, "RGBA")
-    x, y = 90, 56
     phase = frame / FRAMES * math.tau
-    glow(image, x, y, 30 + math.sin(phase) * 2, color((255, 221, 118), 240))
+    glow(image, x, y, radius, (255, 220, 100, 240))
     for index in range(16):
-        angle = phase * 0.6 + index * math.tau / 16
-        inner = 35
-        outer = 51 + math.sin(phase + index) * 3
-        draw.line(
-            (s(x + math.cos(angle) * inner), s(y + math.sin(angle) * inner), s(x + math.cos(angle) * outer), s(y + math.sin(angle) * outer)),
-            fill=color((255, 218, 88), 245),
-            width=s(3.2),
-        )
-    pulse = 1 + math.sin(phase) * 0.035
-    r = 25 * pulse
-    draw.ellipse(box((x - r, y - r, x + r, y + r)), fill=color((255, 240, 151)), outline=color((255, 250, 205)), width=s(2))
+        a = phase * 0.6 + index * math.tau / 16
+        draw.line((s(x + math.cos(a) * (radius + 5)), s(y + math.sin(a) * (radius + 5)), s(x + math.cos(a) * (radius + 22)), s(y + math.sin(a) * (radius + 22))), fill=(255, 220, 84, 230), width=s(3))
+    r = (radius - 5) * (1 + math.sin(phase) * 0.035)
+    draw.ellipse(box((x - r, y - r, x + r, y + r)), fill=(255, 241, 152, 255), outline=(255, 252, 205, 255), width=s(2))
 
 
-def draw_moon(image: Image.Image, sky: tuple[int, int, int], frame: int) -> None:
+def moon(image, sky, frame):
     draw = ImageDraw.Draw(image, "RGBA")
     x, y, r = 296, 52, 24
-    phase = frame / FRAMES * math.tau
-    glow(image, x, y, r * 1.1, color((210, 230, 255), 190))
-    draw.ellipse(box((x - r, y - r, x + r, y + r)), fill=color((248, 245, 226)), outline=color((255, 253, 238)), width=s(1.5))
-    offset = 10 + math.sin(phase) * 1.5
-    draw.ellipse(box((x - r + offset, y - r, x + r + offset, y + r)), fill=color(sky))
+    glow(image, x, y, r, (210, 230, 255, 190))
+    draw.ellipse(box((x - r, y - r, x + r, y + r)), fill=(248, 246, 227, 255), outline=(255, 254, 238, 255), width=s(1.5))
+    draw.ellipse(box((x - r + 10, y - r, x + r + 10, y + r)), fill=(*sky, 255))
 
 
-def draw_stars(image: Image.Image, frame: int, tint: tuple[int, int, int] = (255, 246, 218)) -> None:
+def stars(image, frame):
     draw = ImageDraw.Draw(image, "RGBA")
-    for index in range(36):
+    for index in range(38):
         x = 14 + (index * 41) % (WIDTH - 28)
-        y = 10 + (index * 29) % 90
-        alpha = 70 + round(150 * (0.5 + 0.5 * math.sin(frame * 0.65 + index * 1.37)))
+        y = 10 + (index * 29) % 92
+        alpha = 95 + round(130 * (0.5 + 0.5 * math.sin(frame * 0.55 + index)))
         r = 1.2 + (index % 10 == 0)
-        draw.ellipse(box((x - r, y - r, x + r, y + r)), fill=(*tint, alpha))
+        draw.ellipse(box((x - r, y - r, x + r, y + r)), fill=(255, 246, 218, alpha))
 
 
-def draw_land(image: Image.Image, hill: tuple[int, int, int], ground: tuple[int, int, int], frame: int) -> None:
+def land(image, hill, ground, frame):
     draw = ImageDraw.Draw(image, "RGBA")
     wobble = math.sin(frame / FRAMES * math.tau) * 2
-    draw.polygon(
-        [(s(0), s(HEIGHT)), (s(0), s(164)), (s(68), s(132 + wobble)), (s(154), s(148 - wobble)), (s(260), s(126 + wobble)), (s(WIDTH), s(158)), (s(WIDTH), s(HEIGHT))],
-        fill=color(hill),
-    )
-    draw.rectangle(box((0, 178, WIDTH, HEIGHT)), fill=color(ground))
+    draw.polygon([(0, s(HEIGHT)), (0, s(164)), (s(68), s(132 + wobble)), (s(154), s(148 - wobble)), (s(260), s(126 + wobble)), (s(WIDTH), s(158)), (s(WIDTH), s(HEIGHT))], fill=(*hill, 255))
+    draw.rectangle(box((0, 178, WIDTH, HEIGHT)), fill=(*ground, 255))
+    shade = tuple(max(0, c - 28) for c in ground)
     for x in range(18, WIDTH, 58):
-        shade = tuple(max(0, c - 26) for c in ground)
-        draw.line((s(x), s(183), s(x + 34), s(174)), fill=color(shade, 90), width=s(1.2))
+        draw.line((s(x), s(183), s(x + 34), s(174)), fill=(*shade, 90), width=s(1.2))
 
 
-def draw_cloud(image: Image.Image, x: float, y: float, scale: float, fill: tuple[int, int, int], alpha: int = 235) -> None:
+def cloud(image, x, y, scale, fill, alpha=235):
     layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer, "RGBA")
-    rgba = (*fill, alpha)
     for dx, dy, r in ((0, 15, 23), (31, 0, 29), (65, 12, 31), (99, 20, 24)):
         rr = r * scale
         cx = x + dx * scale
         cy = y + dy * scale
-        draw.ellipse(box((cx - rr, cy - rr, cx + rr, cy + rr)), fill=rgba)
-    draw.rounded_rectangle(box((x - 18 * scale, y + 17 * scale, x + 122 * scale, y + 58 * scale)), radius=s(20 * scale), fill=rgba)
-    shadow = Image.new("RGBA", image.size, (0, 0, 0, 0))
-    shadow_draw = ImageDraw.Draw(shadow, "RGBA")
-    shadow_draw.rounded_rectangle(box((x - 16 * scale, y + 39 * scale, x + 118 * scale, y + 58 * scale)), radius=s(13 * scale), fill=(0, 0, 0, 28))
-    image.alpha_composite(blur_layer(shadow, 1.3))
-    image.alpha_composite(layer)
+        draw.ellipse(box((cx - rr, cy - rr, cx + rr, cy + rr)), fill=(*fill, alpha))
+    draw.rounded_rectangle(box((x - 18 * scale, y + 17 * scale, x + 122 * scale, y + 58 * scale)), radius=s(20 * scale), fill=(*fill, alpha))
+    image.alpha_composite(blur(layer, 0.55))
 
 
-def draw_rain(image: Image.Image, frame: int, count: int, rgba: tuple[int, int, int, int]) -> None:
+def dense_clouds(image, frame, fill, night=False):
+    phase = frame / FRAMES * math.tau
+    back = tuple(max(0, c - (18 if night else 8)) for c in fill)
+    front = tuple(min(255, c + (18 if night else 12)) for c in fill)
+    shade = tuple(max(0, c - 34) for c in fill)
+    drift = math.sin(phase * 0.65) * 5
+    for x, y, sc, col, a in ((-34, 52, .94, shade, 184), (26, 42, 1.14, back, 238), (110, 39, 1.10, back, 245), (202, 44, 1.05, back, 238), (292, 54, .90, shade, 178), (42, 74, 1.0, front, 246), (134, 72, 1.05, front, 250), (232, 76, .96, front, 240)):
+        cloud(image, x + drift, y, sc, col, a)
+
+
+def sun_clouds(image, frame, fill):
+    phase = frame / FRAMES * math.tau
+    back = tuple(min(255, c + 8) for c in fill)
+    front = tuple(min(255, c + 20) for c in fill)
+    shade = tuple(max(0, c - 18) for c in fill)
+    left = math.sin(phase * .8) * 4
+    right = math.cos(phase * .8) * 4
+    for x, y, sc, col, a in ((-30 + left, 104, .68, shade, 96), (28 + left, 96, .8, back, 205), (82 + left, 93, .72, back, 212), (111 + left, 113, .46, front, 220), (203 + right, 93, .72, back, 212), (260 + right, 96, .8, back, 205), (324 + right, 104, .68, shade, 96), (231 + right, 113, .46, front, 220)):
+        cloud(image, x, y, sc, col, a)
+
+
+def rain_clouds(image, frame, night=False):
+    phase = frame / FRAMES * math.tau
+    dark, mid, light = ((42, 48, 63), (62, 70, 88), (82, 92, 111)) if night else ((79, 88, 101), (105, 116, 130), (132, 144, 157))
+    drift = math.sin(phase * .55) * 5
+    for x, y, sc, col, a in ((-44, 38, .96, dark, 240), (20, 30, 1.18, mid, 250), (114, 26, 1.16, mid, 250), (216, 31, 1.08, dark, 244), (300, 43, .88, dark, 228), (58, 63, .94, light, 230), (154, 60, 1.0, light, 236), (254, 66, .84, light, 218)):
+        cloud(image, x + drift, y, sc, col, a)
+
+
+def rain(image, frame, night=False, storm=False):
     draw = ImageDraw.Draw(image, "RGBA")
-    for index in range(count):
-        x = (index * 21 + frame * 10) % (WIDTH + 40) - 35
-        y = (index * 17 + frame * 14) % HEIGHT
-        length = 18 + (index % 4) * 4
-        draw.line((s(x), s(y), s(x - 8), s(y + length)), fill=rgba, width=s(2.3))
-    for index in range(6):
-        x = 34 + index * 62 + math.sin(frame * 0.35 + index) * 4
-        y = 166 + (index % 2) * 7
-        draw.ellipse(box((x - 17, y - 4, x + 17, y + 4)), outline=(185, 228, 255, 130), width=s(1.3))
+    total = 76 if storm else 96
+    for index in range(total):
+        fall = (frame * (8.4 + index % 5 * 1.35) + index * 19) % 106
+        sway = math.sin(frame * .38 + index) * 5 + ((index * 7) % 11 - 5) * .65
+        x = 8 + (index * 37 + (index % 6) * 11) % (WIDTH - 16) + sway - (fall * .16 if storm else 0)
+        y = 82 + fall + math.sin(index * 1.8) * 2
+        size = .8 + (index % 5) * .15
+        slant = 1.55 + (index % 4) * .24 + (.5 if storm else 0)
+        drop = (63, 125, 161, 174) if night else (49, 103, 131, 168)
+        top = (x + slant * .55, y - size * 2.2)
+        left = (x - size * .95, y - size * .15)
+        right = (x + size * .92, y - size * .35)
+        bottom = (x - slant * .3, y + size * 1.15)
+        draw.polygon([(s(top[0]), s(top[1])), (s(left[0]), s(left[1])), (s(bottom[0]), s(bottom[1])), (s(right[0]), s(right[1]))], fill=drop)
+        draw.ellipse(box((x - size, y - size * .35, x + size * .92, y + size * 1.55)), fill=drop)
+    for index in range(10):
+        x = 22 + index * 38 + math.sin(frame * .32 + index) * 5
+        y = 179 + (index % 3) * 8
+        grow = ((frame + index * 2) % FRAMES) / FRAMES
+        draw.ellipse(box((x - 11 - grow * 12, y - 3, x + 11 + grow * 12, y + 4)), fill=(60, 115, 145, 64), outline=(160, 210, 235, 110), width=s(1))
 
 
-def draw_snow(image: Image.Image, frame: int) -> None:
+def snow_scene(image, frame, night=False):
     draw = ImageDraw.Draw(image, "RGBA")
-    for index in range(44):
-        x = (index * 17 + frame * 3.2) % WIDTH
-        y = (index * 13 + frame * 7.8) % HEIGHT
-        drift = math.sin(frame * 0.45 + index * 0.72) * 7
-        r = 1.8 + (index % 3) * 0.55
-        draw.ellipse(box((x + drift - r, y - r, x + drift + r, y + r)), fill=(255, 255, 255, 238))
-    for index in range(8):
-        x = 18 + ((index * 43 + frame * 4) % (WIDTH - 36))
-        y = 154 + (index * 11) % 23
-        draw.line((s(x - 2), s(y), s(x + 2), s(y)), fill=(255, 255, 255, 135), width=s(1))
-        draw.line((s(x), s(y - 2), s(x), s(y + 2)), fill=(255, 255, 255, 135), width=s(1))
+    if night:
+        draw.rectangle((0, s(150), WIDTH * SCALE, HEIGHT * SCALE), fill=(31, 53, 78, 150))
+        pine = (20, 45, 45, 230)
+    else:
+        draw.rectangle((0, s(150), WIDTH * SCALE, HEIGHT * SCALE), fill=(202, 224, 239, 255))
+        pine = (67, 117, 100, 230)
+    for x in range(24, WIDTH, 58):
+        h = 28 + (x % 5) * 4
+        draw.polygon([(s(x), s(132)), (s(x - 18), s(168)), (s(x + 18), s(168))], fill=pine)
+        draw.polygon([(s(x), s(145)), (s(x - 24), s(181)), (s(x + 24), s(181))], fill=pine)
+        draw.line((s(x - 14), s(150), s(x + 12), s(148)), fill=(245, 250, 255, 215), width=s(2))
+        draw.line((s(x - 19), s(164), s(x + 18), s(162)), fill=(245, 250, 255, 225), width=s(2))
+    wave = math.sin(frame / FRAMES * math.tau) * 1.5
+    for y, col in ((158 + wave, (226, 238, 246, 255)), (176 - wave, (238, 246, 250, 255)), (193, (248, 252, 255, 255))):
+        draw.polygon([(0, s(y)), (s(70), s(y - 6)), (s(144), s(y - 1)), (s(230), s(y - 8)), (s(WIDTH), s(y - 3)), (s(WIDTH), s(HEIGHT)), (0, s(HEIGHT))], fill=col)
+    sx, sy = 305, 182
+    draw.ellipse(box((sx - 18, sy - 18, sx + 18, sy + 18)), fill=(250, 253, 255, 255), outline=(195, 210, 225, 160), width=s(1))
+    draw.ellipse(box((sx - 13, sy - 40, sx + 13, sy - 14)), fill=(250, 253, 255, 255), outline=(195, 210, 225, 160), width=s(1))
+    draw.ellipse(box((sx - 4, sy - 31, sx - 2, sy - 29)), fill=(18, 28, 38, 255))
+    draw.ellipse(box((sx + 4, sy - 31, sx + 6, sy - 29)), fill=(18, 28, 38, 255))
+    draw.polygon([(s(sx + 1), s(sy - 27)), (s(sx + 13), s(sy - 25)), (s(sx + 1), s(sy - 23))], fill=(231, 110, 48, 255))
+    for index in range(58):
+        x = (index * 23 + frame * (2.1 + index % 4)) % WIDTH
+        y = (index * 17 + frame * (5 + index % 3)) % HEIGHT
+        drift = math.sin(frame * .35 + index) * 7
+        r = 1.1 + (index % 4) * .35
+        draw.ellipse(box((x + drift - r, y - r, x + drift + r, y + r)), fill=(255, 255, 255, 220))
+        if index % 7 == 0:
+            draw.line((s(x + drift - 2), s(y), s(x + drift + 2), s(y)), fill=(255, 255, 255, 150), width=1)
+            draw.line((s(x + drift), s(y - 2), s(x + drift), s(y + 2)), fill=(255, 255, 255, 150), width=1)
 
 
-def draw_wind(image: Image.Image, frame: int, rgba: tuple[int, int, int, int]) -> None:
+def lightning(image, frame, night=False):
+    cycle = frame % 12
+    if cycle > 7:
+        return
+    progress = min(1, (cycle + 1) / 6)
+    fade = 1 if cycle <= 5 else max(0, 1 - (cycle - 5) / 2)
+    points = [(206, 58), (189, 82), (204, 84), (178, 118), (196, 115), (166, 158)] if cycle < 4 else [(248, 56), (226, 82), (240, 84), (212, 120), (229, 117), (200, 158)]
+    visible = [points[0]]
+    for a, b in zip(points, points[1:]):
+        if len(visible) / len(points) <= progress:
+            visible.append(b)
     draw = ImageDraw.Draw(image, "RGBA")
-    for band in range(7):
-        start_x = (frame * 18 + band * 54) % (WIDTH + 120) - 120
-        y = 50 + band * 18
-        points = [(s(start_x + step * 26), s(y + math.sin((frame + step + band) * 0.62) * 4)) for step in range(9)]
-        draw.line(points, fill=rgba, width=s(3))
-    for index in range(9):
-        x = (frame * 17 + index * 49) % (WIDTH + 40) - 20
-        y = 113 + math.sin((frame + index) * 0.55) * 24
-        draw.ellipse(box((x - 5, y - 2.2, x + 5, y + 2.2)), fill=(223, 181, 74, 170))
+    if len(visible) > 1:
+        draw.line([(s(x), s(y)) for x, y in visible], fill=(255, 230, 95, round((230 if night else 210) * fade)), width=s(5))
+        draw.line([(s(x), s(y)) for x, y in visible], fill=(255, 252, 190, round(245 * fade)), width=s(2))
 
 
-def draw_fog(image: Image.Image, frame: int) -> None:
+def fog(image, frame):
     layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer, "RGBA")
-    for band in range(6):
+    for band in range(7):
         x = (frame * 8 + band * 72) % (WIDTH + 170) - 170
-        y = 58 + band * 20
-        draw.rounded_rectangle(box((x, y, x + 248, y + 17)), radius=s(9), fill=(238, 244, 246, 86))
-    image.alpha_composite(blur_layer(layer, 1.2))
+        y = 56 + band * 19
+        draw.rounded_rectangle(box((x, y, x + 260, y + 18)), radius=s(9), fill=(238, 244, 246, 86))
+    image.alpha_composite(blur(layer, 1.4))
 
 
-def draw_heat(image: Image.Image, frame: int, rgba: tuple[int, int, int, int]) -> None:
+def natural_wind(image, frame, night=False):
     draw = ImageDraw.Draw(image, "RGBA")
-    for band in range(6):
-        y = 88 + band * 14
-        points = [(s(20 + step * 27), s(y + math.sin((frame + step + band) * 0.62) * 5)) for step in range(12)]
-        draw.line(points, fill=rgba, width=s(2.4))
+    phase = frame / FRAMES * math.tau
+    layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    gust = ImageDraw.Draw(layer, "RGBA")
+    for cloud_index in range(10):
+        cx = (frame * (10 + cloud_index % 4) + cloud_index * 50) % (WIDTH + 150) - 75
+        cy = 70 + (cloud_index * 19) % 90
+        for puff in range(6):
+            px = cx - puff * 14 + math.sin(phase + puff) * 4
+            py = cy + math.sin(phase * 1.3 + cloud_index + puff) * 3
+            gust.ellipse(box((px - 20 - puff * 4, py - 4 - puff, px + 20 + puff * 4, py + 4 + puff)), fill=(210, 238, 246, 34 if not night else 26))
+    image.alpha_composite(blur(layer, 1.6))
+    grass = ((54, 119, 72, 220), (67, 139, 83, 210), (91, 154, 83, 185)) if not night else ((50, 84, 63, 220), (76, 111, 75, 205), (104, 126, 82, 180))
+    for tuft in range(38):
+        base_x = 2 + tuft * 10
+        base_y = 190 + (tuft % 5) * 4
+        for blade in range(4):
+            length = 12 + ((tuft + blade) % 6) * 2
+            push = 8 + math.sin(phase * 1.45 + tuft * .38 + blade) * 5
+            draw.line((s(base_x + blade * 2), s(base_y), s(base_x + push * .45), s(base_y - length * .55), s(base_x + push), s(base_y - length)), fill=grass[(tuft + blade) % len(grass)], width=max(1, s(.75)))
+    for index in range(28):
+        x = (frame * (8 + index % 5) + index * 37) % (WIDTH + 70) - 35
+        y = 68 + math.sin(phase * 1.25 + index) * 30 + (index % 5) * 17
+        a = phase * 2 + index * .72
+        length = 7 + (index % 4) * 1.4
+        w = length * .45
+        leaf = (187, 148, 48, 190) if index % 4 else (118, 152, 67, 190)
+        cx, cy = x + math.cos(a) * 6, y + math.sin(a * .8) * 5
+        ux, uy = math.cos(a), math.sin(a)
+        px, py = -uy, ux
+        draw.polygon([(s(cx + ux * length), s(cy + uy * length)), (s(cx + px * w), s(cy + py * w)), (s(cx - ux * length * .55), s(cy - uy * length * .55)), (s(cx - px * w), s(cy - py * w))], fill=leaf)
 
 
-def palette(theme: str, period: str) -> tuple[tuple[int, int, int], tuple[int, int, int], tuple[int, int, int], tuple[int, int, int], tuple[int, int, int]]:
-    if period == "night":
-        values = {
-            "sun": ((23, 34, 72), (74, 96, 143), (45, 75, 91), (29, 55, 73), (154, 169, 190)),
-            "cloud": ((27, 38, 68), (77, 93, 124), (47, 67, 80), (36, 54, 64), (138, 151, 170)),
-            "rain": ((20, 26, 48), (66, 82, 120), (42, 55, 75), (27, 38, 52), (70, 80, 102)),
-            "snow": ((29, 44, 86), (99, 123, 166), (172, 190, 212), (225, 235, 245), (166, 183, 205)),
-            "storm": ((13, 15, 30), (47, 54, 82), (28, 35, 54), (20, 25, 39), (38, 44, 61)),
-            "fog": ((43, 55, 72), (102, 116, 135), (76, 90, 105), (60, 73, 86), (163, 176, 188)),
-            "wind": ((23, 47, 86), (78, 115, 168), (58, 95, 88), (43, 76, 71), (174, 197, 219)),
-            "heat": ((73, 34, 48), (161, 82, 63), (103, 58, 49), (86, 42, 36), (214, 146, 111)),
-        }
+def tumbleweed(draw, x, y, r, angle, alpha):
+    draw.ellipse(box((x - r, y + r * .55, x + r, y + r * .8)), fill=(58, 38, 20, 60))
+    cols = ((104, 67, 33, alpha), (145, 91, 42, max(95, alpha - 35)), (190, 132, 63, max(80, alpha - 55)))
+    for ring in (1, .72, .48):
+        rr = r * ring
+        for k in range(3):
+            start = math.degrees(angle) + k * 118
+            draw.arc(box((x - rr, y - rr, x + rr, y + rr)), start=start, end=start + 94, fill=cols[k], width=max(1, s(.7)))
+    for branch in range(20):
+        a = angle + branch * math.tau / 20
+        draw.line((s(x + math.cos(a) * r * .12), s(y + math.sin(a) * r * .12), s(x + math.cos(a + math.sin(angle + branch) * .2) * r * .8), s(y + math.sin(a + math.sin(angle + branch) * .2) * r * .8)), fill=cols[branch % 3], width=1)
+
+
+def heat(image, frame, night=False):
+    draw = ImageDraw.Draw(image, "RGBA")
+    phase = frame / FRAMES * math.tau
+    if night:
+        hill, ground, dust_col, grass_cols = (67, 35, 39, 116), (48, 28, 30, 136), (91, 51, 35), ((48, 30, 23, 210), (68, 42, 27, 185), (93, 59, 32, 150))
     else:
-        values = {
-            "sun": ((78, 178, 238), (235, 242, 190), (104, 176, 113), (73, 148, 90), (247, 249, 252)),
-            "cloud": ((124, 155, 188), (217, 226, 234), (99, 128, 116), (85, 110, 96), (228, 234, 241)),
-            "rain": ((76, 97, 126), (151, 170, 188), (80, 105, 103), (62, 82, 84), (105, 119, 138)),
-            "snow": ((156, 181, 205), (232, 240, 247), (210, 224, 235), (238, 246, 250), (224, 234, 242)),
-            "storm": ((51, 57, 85), (114, 115, 136), (59, 70, 88), (42, 52, 66), (61, 68, 87)),
-            "fog": ((163, 176, 180), (217, 225, 227), (140, 152, 154), (116, 130, 131), (207, 216, 219)),
-            "wind": ((90, 160, 215), (210, 236, 255), (116, 170, 126), (87, 148, 100), (238, 246, 252)),
-            "heat": ((255, 184, 91), (255, 232, 166), (198, 149, 82), (176, 118, 55), (255, 228, 151)),
-        }
-    return values[theme]
+        hill, ground, dust_col, grass_cols = (176, 116, 55, 118), (156, 94, 43, 78), (139, 78, 31), ((116, 72, 28, 188), (150, 100, 38, 170), (191, 146, 64, 158))
+    draw.polygon([(0, s(159)), (s(76), s(148)), (s(148), s(155)), (s(230), s(143)), (s(WIDTH), s(157)), (s(WIDTH), s(181)), (0, s(181))], fill=hill)
+    draw.polygon([(0, s(180)), (s(80), s(171)), (s(154), s(176)), (s(244), s(166)), (s(WIDTH), s(175)), (s(WIDTH), s(HEIGHT)), (0, s(HEIGHT))], fill=ground)
+    layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    dust = ImageDraw.Draw(layer, "RGBA")
+    for cloud_index in range(12):
+        cx = (frame * (14 + cloud_index % 5) + cloud_index * 47) % (WIDTH + 160) - 80
+        cy = 134 + (cloud_index * 11) % 55 + math.sin(phase * 1.15 + cloud_index) * 6
+        for puff in range(8):
+            px = cx - puff * (10 + cloud_index % 4 * 4) + math.sin(phase * 1.2 + puff) * 5
+            py = cy + math.sin(phase * 1.35 + puff) * 4 + puff
+            dust.ellipse(box((px - 15 - puff * 6, py - 5 - puff, px + 15 + puff * 6, py + 5 + puff)), fill=(*dust_col, max(11, 58 - puff * 6)))
+    image.alpha_composite(blur(layer, 1.65))
+    for tuft in range(62):
+        bx = 1 + tuft * 6.35
+        by = 191 + (tuft % 7) * 3.7
+        pressure = .5 + .5 * math.sin((tuft - frame * 2.7) * .32)
+        for blade in range(5):
+            length = 11 + ((tuft + blade) % 7) * 2.4
+            push = 10 + pressure * 10 + math.sin(phase * 1.65 + tuft * .43) * 3
+            draw.line((s(bx + blade * 1.45), s(by), s(bx + push * .34), s(by - length * .52), s(bx + push), s(by - length)), fill=grass_cols[(tuft + blade) % len(grass_cols)], width=max(1, s(.66)))
+    for x, y, r, speed, off in (((frame * 14.2) % (WIDTH + 136) - 68, 190 + math.sin(phase * 1.8) * 4.5, 20, 2.75, 0), ((frame * 10.8 + 92) % (WIDTH + 120) - 60, 185 + math.sin(phase * 1.4) * 3.5, 13.5, 2.15, 1.4), ((frame * 8.2 + 210) % (WIDTH + 126) - 63, 176 + math.sin(phase * 1.2) * 3, 11.5, 1.85, .7)):
+        for dust_index in range(7):
+            draw.ellipse(box((x - 40 - dust_index * 8, y + 5 - dust_index * .25, x - 5 - dust_index * 8, y + 10 + dust_index * .35)), fill=(*dust_col, max(16, 60 - dust_index * 6)))
+        tumbleweed(draw, x, y, r, phase * speed + off, 220 if not night else 190)
+    haze = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    hd = ImageDraw.Draw(haze, "RGBA")
+    for band in range(7):
+        y = 94 + band * 9
+        for patch in range(5):
+            x = -34 + patch * 95 + math.sin(phase * 1.15 + band) * 11
+            hd.ellipse(box((x - 52, y - 7, x + 52, y + 7)), fill=(255, 241, 183, 16 if not night else 10))
+    image.alpha_composite(blur(haze, 3.2))
 
 
-def frame(theme: str, period: str, frame_index: int) -> Image.Image:
-    sky_top, sky_bottom, hill, ground, cloud = palette(theme, period)
+def palette(theme, period):
+    night = {
+        "sun": ((23, 34, 72), (74, 96, 143), (45, 75, 91), (29, 55, 73), (154, 169, 190)),
+        "cloud": ((27, 38, 68), (77, 93, 124), (47, 67, 80), (36, 54, 64), (138, 151, 170)),
+        "rain": ((20, 26, 48), (66, 82, 120), (42, 55, 75), (27, 38, 52), (70, 80, 102)),
+        "snow": ((29, 44, 86), (99, 123, 166), (172, 190, 212), (225, 235, 245), (166, 183, 205)),
+        "storm": ((13, 15, 30), (47, 54, 82), (28, 35, 54), (20, 25, 39), (38, 44, 61)),
+        "fog": ((43, 55, 72), (102, 116, 135), (76, 90, 105), (60, 73, 86), (163, 176, 188)),
+        "wind": ((23, 47, 86), (78, 115, 168), (58, 95, 88), (43, 76, 71), (174, 197, 219)),
+        "heat": ((73, 34, 48), (161, 82, 63), (103, 58, 49), (86, 42, 36), (214, 146, 111)),
+    }
+    day = {
+        "sun": ((78, 178, 238), (235, 242, 190), (104, 176, 113), (73, 148, 90), (247, 249, 252)),
+        "cloud": ((124, 155, 188), (217, 226, 234), (99, 128, 116), (85, 110, 96), (228, 234, 241)),
+        "rain": ((76, 97, 126), (151, 170, 188), (80, 105, 103), (62, 82, 84), (105, 119, 138)),
+        "snow": ((156, 181, 205), (232, 240, 247), (210, 224, 235), (238, 246, 250), (224, 234, 242)),
+        "storm": ((51, 57, 85), (114, 115, 136), (59, 70, 88), (42, 52, 66), (61, 68, 87)),
+        "fog": ((163, 176, 180), (217, 225, 227), (140, 152, 154), (116, 130, 131), (207, 216, 219)),
+        "wind": ((90, 160, 215), (210, 236, 255), (116, 170, 126), (87, 148, 100), (238, 246, 252)),
+        "heat": ((255, 184, 91), (255, 232, 166), (198, 149, 82), (176, 118, 55), (255, 228, 151)),
+    }
+    return (night if period == "night" else day)[theme]
+
+
+def frame(theme, period, frame_index):
+    sky_top, sky_bottom, hill, ground, cloud_col = palette(theme, period)
     image = gradient(sky_top, sky_bottom)
     phase = frame_index / FRAMES * math.tau
-    if period == "night":
-        draw_stars(image, frame_index)
-        draw_moon(image, sky_top, frame_index)
-    else:
-        if theme in {"sun", "cloud", "wind", "heat"}:
-            draw_sun(image, frame_index)
-    draw_land(image, hill, ground, frame_index)
-    if theme in {"sun", "cloud", "rain", "snow", "storm", "fog", "wind"}:
-        draw_cloud(image, 34 + math.sin(phase) * 9, 45, 1.02, cloud)
-        draw_cloud(image, 171 + math.cos(phase * 0.8) * 13, 40, 0.88, cloud, 224)
-        if theme == "cloud":
-            draw_cloud(image, 238 + math.sin(phase * 0.9 + 2) * 10, 66, 0.82, cloud, 188)
-    if theme == "rain":
-        draw_rain(image, frame_index, 30, (125, 207, 255, 220))
+    night = period == "night"
+    if night:
+        stars(image, frame_index)
+        moon(image, sky_top, frame_index)
+    elif theme == "sun":
+        sun(image, frame_index, WIDTH / 2, 74, 38)
+    elif theme in {"cloud", "wind", "heat"}:
+        sun(image, frame_index)
+    if theme != "snow":
+        land(image, hill, ground, frame_index)
+    if theme == "sun" and period == "day":
+        sun_clouds(image, frame_index, cloud_col)
+    elif theme == "cloud":
+        dense_clouds(image, frame_index, cloud_col, night)
+    elif theme == "rain":
+        rain_clouds(image, frame_index, night)
+        rain(image, frame_index, night)
     elif theme == "snow":
-        draw_snow(image, frame_index)
+        snow_scene(image, frame_index, night)
     elif theme == "storm":
-        draw_rain(image, frame_index, 22, (156, 212, 255, 195))
-        if frame_index in {4, 5, 13, 14, 15}:
-            draw = ImageDraw.Draw(image, "RGBA")
-            draw.polygon([(s(212), s(62)), (s(186), s(104)), (s(208), s(104)), (s(174), s(156)), (s(247), s(89)), (s(218), s(92))], fill=(255, 235, 109, 255))
-            draw.rectangle((0, 0, WIDTH * SCALE, HEIGHT * SCALE), fill=(255, 255, 255, 48 if period == "day" else 70))
+        rain_clouds(image, frame_index, night)
+        rain(image, frame_index, night, storm=True)
+        natural_wind(image, frame_index, night)
+        lightning(image, frame_index, night)
     elif theme == "fog":
-        draw_fog(image, frame_index)
+        cloud(image, 34 + math.sin(phase) * 9, 45, 1.02, cloud_col)
+        cloud(image, 171 + math.cos(phase * .8) * 13, 40, .88, cloud_col, 224)
+        fog(image, frame_index)
     elif theme == "wind":
-        draw_wind(image, frame_index, (232, 247, 255, 185 if period == "day" else 150))
+        cloud(image, 34 + math.sin(phase) * 9, 45, 1.02, cloud_col)
+        cloud(image, 171 + math.cos(phase * .8) * 13, 40, .88, cloud_col, 224)
+        natural_wind(image, frame_index, night)
     elif theme == "heat":
-        draw_heat(image, frame_index, (255, 255, 255, 150 if period == "day" else 112))
+        heat(image, frame_index, night)
+    else:
+        cloud(image, 34 + math.sin(phase) * 9, 45, 1.02, cloud_col)
+        cloud(image, 171 + math.cos(phase * .8) * 13, 40, .88, cloud_col, 224)
     return image.resize((WIDTH, HEIGHT), Image.Resampling.LANCZOS)
 
 
-def save_gif(theme: str, period: str) -> Path:
-    frames = [frame(theme, period, index) for index in range(FRAMES)]
-    prepared = [image.convert("P", palette=Image.Palette.ADAPTIVE, colors=128) for image in frames]
+def save_gif(theme, period):
+    frames = [frame(theme, period, i) for i in range(FRAMES)]
+    prepared = [im.convert("P", palette=Image.Palette.ADAPTIVE, colors=128) for im in frames]
     OUT.mkdir(parents=True, exist_ok=True)
     path = OUT / f"{theme}_{period}.gif"
     prepared[0].save(path, save_all=True, append_images=prepared[1:], duration=DURATION, loop=0, disposal=2, optimize=False)
     return path
 
 
-def assets_ready() -> bool:
+def assets_ready():
     try:
         if MARKER.read_text(encoding="utf-8").strip() != VERSION:
             return False
@@ -274,7 +396,7 @@ def assets_ready() -> bool:
     return True
 
 
-def main() -> None:
+def main():
     if assets_ready():
         print(MARKER)
         return
