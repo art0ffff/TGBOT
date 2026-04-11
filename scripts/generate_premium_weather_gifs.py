@@ -8,6 +8,8 @@ from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "weather"
+VERSION = "premium-v4"
+MARKER = OUT / ".premium-gifs"
 WIDTH = 384
 HEIGHT = 216
 SCALE = 2
@@ -258,10 +260,29 @@ def save_gif(theme: str, period: str) -> Path:
     return path
 
 
+def assets_ready() -> bool:
+    try:
+        if MARKER.read_text(encoding="utf-8").strip() != VERSION:
+            return False
+        for theme in THEMES:
+            for period in PERIODS:
+                path = OUT / f"{theme}_{period}.gif"
+                if not path.is_file() or path.stat().st_size < 50_000:
+                    return False
+    except Exception:
+        return False
+    return True
+
+
 def main() -> None:
+    if assets_ready():
+        print(MARKER)
+        return
     for theme in THEMES:
         for period in PERIODS:
             print(save_gif(theme, period))
+    MARKER.write_text(VERSION, encoding="utf-8")
+    print(MARKER)
 
 
 if __name__ == "__main__":
