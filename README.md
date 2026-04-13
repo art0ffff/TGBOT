@@ -6,6 +6,8 @@ Telegram-бот погоды для Railway. Прогноз берется из 
 
 - Показывает погоду по городу: можно написать `Москва` без команды.
 - Показывает погоду по геопозиции из Telegram.
+- Отправляет GIF под погоду: солнце, облака, дождь, снег, гроза, туман, ветер или жара.
+- Если GIF-файлов нет в репозитории, бот сам создаст их через Pillow при первом запросе.
 - Переключает карточку кнопками: Сейчас, Сегодня, Завтра, 5 дней, Обновить.
 - Пишет дружескую фразу про одежду одним предложением, без сухих рубрик.
 - Склоняет город в карточке: `В Москве`, `В Санкт-Петербурге`, `В Нижнем Новгороде`.
@@ -21,6 +23,15 @@ USE_WEBHOOK=0
 
 Для Railway добавь `TELEGRAM_BOT_TOKEN`, `WEATHER_PROVIDER=openmeteo`, `USE_WEBHOOK=0`.
 Open-Meteo не требует `OPENWEATHER_API_KEY`.
+
+## Railway
+
+1. Подключи этот GitHub-репозиторий к Railway.
+2. В `Variables` добавь `TELEGRAM_BOT_TOKEN`, `WEATHER_PROVIDER=openmeteo`, `USE_WEBHOOK=0`.
+3. Проверь, что Start Command пустой или равен `env USE_WEBHOOK=0 python app.py`.
+4. Нажми `Redeploy`.
+
+`railway.json` уже содержит нужный start command. Он принудительно запускает polling, даже если в Variables случайно осталось `USE_WEBHOOK=1`.
 
 ## Запуск локально
 
@@ -39,17 +50,6 @@ python app.py
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
-
-## Railway
-
-1. Подключи этот GitHub-репозиторий к Railway.
-2. В `Variables` добавь `TELEGRAM_BOT_TOKEN`, `WEATHER_PROVIDER=openmeteo`, `USE_WEBHOOK=0`.
-3. Проверь, что Start Command пустой или равен `env USE_WEBHOOK=0 python app.py`.
-4. Нажми `Redeploy`.
-
-`railway.json` уже содержит нужный start command. Он принудительно запускает polling, даже если в Variables случайно осталось `USE_WEBHOOK=1`.
-
-Если захочешь webhook, сначала создай публичный Railway domain, потом убери `env USE_WEBHOOK=0` из Start Command и поставь `USE_WEBHOOK=1`.
 
 ## GitHub
 
