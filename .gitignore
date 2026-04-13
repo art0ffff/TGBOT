@@ -8,6 +8,7 @@ data/
 .pytest_cache/
 .pycache_check/
 app_loader.py
+app_deploy.py
 runtime_parts/
 bundle_parts/
 tests/tmp*/
