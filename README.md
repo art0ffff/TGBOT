@@ -1,48 +1,56 @@
 # Telegram Weather Bot
 
-Бот погоды для Telegram с запуском на Railway.
+Telegram-бот погоды для Railway. Прогноз берется из бесплатного Open-Meteo, ключ погоды не нужен.
 
-Что есть:
-- inline-кнопки `Сейчас`, `Сегодня`, `Завтра`, `5 дней`, `Обновить`, `Мой город`
-- текущая погода, прогноз на сегодня, завтра и 5 дней
-- премиум GIF-анимации для солнца, облаков, дождя, снега, грозы, тумана, ветра и жары
-- дневные и ночные сцены, мягкое свечение, частицы, дождь, снег, молнии, туман и ветер
-- умный совет по одежде с учетом ощущаемой температуры, ветра, осадков и перепада за день
-- сохранение последнего города или геопозиции в `data/user_places.json`
+## Что умеет
 
-## Переменные Railway
+- Показывает погоду по городу: можно написать `Москва` без команды.
+- Показывает погоду по геопозиции из Telegram.
+- Переключает карточку кнопками: Сейчас, Сегодня, Завтра, 5 дней, Обновить.
+- Пишет дружескую фразу про одежду одним предложением, без сухих рубрик.
+- Склоняет город в карточке: `В Москве`, `В Санкт-Петербурге`, `В Нижнем Новгороде`.
+- Работает локально через polling и на Railway через webhook.
 
-В Railway открой `Variables` и добавь:
-
-```text
-TELEGRAM_BOT_TOKEN=токен_бота_из_BotFather
-OPENWEATHER_API_KEY=ключ_из_OpenWeather
-```
-
-`.env` в GitHub не загружай.
-
-## Запуск
-
-Railway берет команду из `railway.json`:
-
-```bash
-python start.py
-```
-
-Перед запуском бота `start.py` генерирует новые GIF-файлы в `assets/weather/`: 384x216, 24 кадра, отдельные дневные и ночные версии.
-
-Если Railway в настройках все еще запускает `python app.py`, бот тоже сработает: `sitecustomize.py` запустится автоматически и пересоздаст GIF до старта `app.py`.
-
-Кнопка `Обновить` при запуске через `start.py` отправляет новую карточку с заново загруженным GIF, а не просто меняет подпись старого сообщения.
-
-## Проверка
-
-После деплоя в логах Railway должны появиться пути вроде:
+## Переменные
 
 ```text
-/app/assets/weather/sun_day.gif
-/app/assets/weather/rain_night.gif
-Weather bot started
+TELEGRAM_BOT_TOKEN=...
+WEATHER_PROVIDER=openmeteo
+USE_WEBHOOK=1
 ```
 
-Потом напиши боту `/start`, затем город, например `Москва`. Старые сообщения в Telegram сами не меняются, нужно отправить новый город или нажать `Обновить` после нового деплоя.
+Для Railway добавь `TELEGRAM_BOT_TOKEN`, `WEATHER_PROVIDER=openmeteo`, `USE_WEBHOOK=1`.
+Если Railway сам даст домен, бот возьмет его из `RAILWAY_PUBLIC_DOMAIN`.
+
+Open-Meteo не требует `OPENWEATHER_API_KEY`.
+
+## Запуск локально
+
+```powershell
+cd D:\tgbot
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+Copy-Item .env.example .env
+notepad .env
+python app.py
+```
+
+Если PowerShell блокирует активацию:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+## Railway
+
+1. Подключи этот GitHub-репозиторий к Railway.
+2. Добавь переменные `TELEGRAM_BOT_TOKEN`, `WEATHER_PROVIDER=openmeteo`, `USE_WEBHOOK=1`.
+3. Проверь, что Start Command пустой или равен `python app.py`.
+4. Убедись, что у сервиса есть публичный домен Railway, и запусти redeploy.
+
+`railway.json` уже содержит нужный start command.
+
+## GitHub
+
+Не добавляй в Git `.env`, `.venv/`, `data/`, `bot*.log`, `__pycache__/`, `*.pyc`, `app_loader.py` и `runtime_parts/`: они закрыты в `.gitignore`.

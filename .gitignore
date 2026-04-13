@@ -6,4 +6,8 @@ bot*.log
 data/
 *.db
 .pytest_cache/
-assets/weather/
+.pycache_check/
+app_loader.py
+runtime_parts/
+bundle_parts/
+tests/tmp*/
