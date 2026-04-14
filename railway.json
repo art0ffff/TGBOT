@@ -1,6 +1,6 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "deploy": {
-    "startCommand": "env USE_WEBHOOK=1 python app.py"
+    "startCommand": "env USE_WEBHOOK=1 python start_railway.py"
   }
 }
