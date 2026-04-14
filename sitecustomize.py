@@ -38,7 +38,7 @@ def _generate_premium_weather_gifs() -> None:
     root = Path(__file__).resolve().parent
     if _premium_weather_gifs_ready(root):
         return
-    script = root / "scripts" / "generate_premium_weather_gifs.py"
+    script = root / "scripts" / "generate_railway_weather_gifs.py"
     if not script.is_file():
         return
     try:
